@@ -14,6 +14,7 @@ import com.example.stepcoach.ui.theme.StepCoachTheme
 import android.Manifest
 import android.content.pm.PackageManager
 import android.hardware.Sensor
+import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
@@ -37,6 +38,7 @@ import androidx.navigation.compose.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.unit.dp
 
 class MainActivity : ComponentActivity(), SensorEventListener {
@@ -49,14 +51,20 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private lateinit var stepsDao: StepsDao
     private var initialStepCount = 0f
     private var lastSavedDate = ""
+    private val prefs by lazy { getSharedPreferences("step_prefs", MODE_PRIVATE) }
 
+// workmanager
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
 
         db = thisDatabase.getDatabase(this)
         stepsDao = db.stepsDao()
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+        initialStepCount = prefs.getFloat("initialStepCount", 0f)
+        val prefs = getPreferences(MODE_PRIVATE)
+        val lastKnownSteps = prefs.getFloat("last_known_steps", 0f)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
@@ -74,22 +82,25 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             }
         }
 
-        setContent {
-            val navController = rememberNavController()
 
-            NavHost(navController = navController, startDestination = "step_counter") {
-                composable("step_counter") {
-                    StepCounterScreen(  onStepUpdate = { listener -> onStepCountChanged = listener },onNavigateToHistory = {
-                        navController.navigate("step_history")
-                    })
-                }
-                composable("step_history") {
-                    StepHistoryScreen(stepsDao, navController)
+    setContent {
+        val navController = rememberNavController()
 
-                }
+        NavHost(navController = navController, startDestination = "step_counter") {
+            composable("step_counter") {
+                StepCounterScreen(
+                    initialSteps = lastKnownSteps,
+                    onStepUpdate = { listener -> onStepCountChanged = listener },
+                    onNavigateToHistory = { navController.navigate("step_history") }
+                )
+            }
+            composable("step_history") {
+                StepHistoryScreen(stepsDao, navController)
             }
         }
     }
+
+}
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
@@ -108,13 +119,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         sensorManager.unregisterListener(this)
     }
 
-    override fun onSensorChanged(event: android.hardware.SensorEvent?) {
+    override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type == Sensor.TYPE_STEP_COUNTER) {
             val totalSteps = event.values[0]
             val today = LocalDate.now().toString()
 
             if (lastSavedDate != today) {
-
                 val yesterday = lastSavedDate
                 val stepsYesterday = (totalSteps - initialStepCount).toInt()
 
@@ -124,13 +134,24 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     }
                 }
 
-                // new day steps
                 initialStepCount = totalSteps
                 lastSavedDate = today
             }
 
-            val Steps = (totalSteps - initialStepCount)
-            onStepCountChanged?.invoke(Steps)
+            if (initialStepCount == 0f) {
+                initialStepCount = totalSteps
+                prefs.edit().putFloat("initialStepCount", initialStepCount).apply()
+            }
+
+            val stepsToday = (totalSteps - initialStepCount)
+            onStepCountChanged?.invoke(stepsToday)
+
+            val steps = (totalSteps - initialStepCount)
+            onStepCountChanged?.invoke(steps)
+
+            getPreferences(MODE_PRIVATE).edit()
+                .putFloat("last_known_steps", steps)
+                .apply()
         }
     }
 
@@ -138,16 +159,18 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 }
 
 @Composable
-fun StepCounterScreen(onStepUpdate: (listener: (Float) -> Unit) -> Unit, onNavigateToHistory: () -> Unit) {
-    var steps by remember { mutableStateOf(0f) }
+fun StepCounterScreen(
+    initialSteps: Float,
+    onStepUpdate: (listener: (Float) -> Unit) -> Unit,
+    onNavigateToHistory: () -> Unit
+) {
+    var steps by rememberSaveable { mutableStateOf(initialSteps) }
 
     onStepUpdate { newSteps ->
         steps = newSteps
     }
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
+
+    Surface(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -155,14 +178,14 @@ fun StepCounterScreen(onStepUpdate: (listener: (Float) -> Unit) -> Unit, onNavig
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(text = "Askelten määrä", style = MaterialTheme.typography.headlineSmall)
+            Text(text = "StepCount", style = MaterialTheme.typography.headlineSmall)
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = steps.toInt().toString(), style = MaterialTheme.typography.displayLarge)
 
             Spacer(modifier = Modifier.height(32.dp))
 
             Button(onClick = onNavigateToHistory) {
-                Text(text = "Edelliset päivät")
+                Text(text = "Previous days")
             }
         }
     }
@@ -182,7 +205,7 @@ fun StepHistoryScreen(stepsDao: StepsDao, navController: NavController) {
                 onClick = { navController.popBackStack() },
                 modifier = Modifier.align(Alignment.Start)
             ) {
-                Text("Takaisin pääsivulle")
+                Text("Back")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
