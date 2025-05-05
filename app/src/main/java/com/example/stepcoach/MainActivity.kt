@@ -40,6 +40,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.unit.dp
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.OneTimeWorkRequest
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.Calendar
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity(), SensorEventListener {
 
@@ -53,18 +59,27 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var lastSavedDate = ""
     private val prefs by lazy { getSharedPreferences("step_prefs", MODE_PRIVATE) }
 
-// workmanager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-
         db = thisDatabase.getDatabase(this)
         stepsDao = db.stepsDao()
+        val workRequest = PeriodicWorkRequestBuilder<Wakeup>(1, TimeUnit.DAYS)
+            .setInitialDelay(calculateMidnightDelay(), TimeUnit.MILLISECONDS)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "midnight_reset",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            workRequest
+        )
+
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
-        initialStepCount = prefs.getFloat("initialStepCount", 0f)
-        val prefs = getPreferences(MODE_PRIVATE)
-        val lastKnownSteps = prefs.getFloat("last_known_steps", 0f)
+        initialStepCount = prefs.getFloat("initialStepCount", -1f)
+        lastSavedDate = prefs.getString("lastSavedDate", "") ?: ""
+        val lastKnownSteps = prefs.getFloat("stepsToday", 0f)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
@@ -81,7 +96,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             if (todaySteps != null) {
             }
         }
-
 
     setContent {
         val navController = rememberNavController()
@@ -125,38 +139,54 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             val today = LocalDate.now().toString()
 
             if (lastSavedDate != today) {
-                val yesterday = lastSavedDate
-                val stepsYesterday = (totalSteps - initialStepCount).toInt()
 
-                if (yesterday.isNotEmpty()) {
+                val stepsYesterday = (totalSteps - initialStepCount).toInt()
+                if (lastSavedDate.isNotEmpty()) {
                     lifecycleScope.launch {
-                        stepsDao.insertOrUpdate(Steps(yesterday, stepsYesterday))
+                        stepsDao.insertOrUpdate(Steps(lastSavedDate, stepsYesterday))
                     }
                 }
 
                 initialStepCount = totalSteps
                 lastSavedDate = today
+                prefs.edit()
+                    .putFloat("initialStepCount", initialStepCount)
+                    .putString("lastSavedDate", lastSavedDate)
+                    .apply()
             }
 
-            if (initialStepCount == 0f) {
+            if (initialStepCount < 0f) {
                 initialStepCount = totalSteps
                 prefs.edit().putFloat("initialStepCount", initialStepCount).apply()
             }
 
-            val stepsToday = (totalSteps - initialStepCount)
+            val stepsToday = totalSteps - initialStepCount
             onStepCountChanged?.invoke(stepsToday)
 
-            val steps = (totalSteps - initialStepCount)
-            onStepCountChanged?.invoke(steps)
-
-            getPreferences(MODE_PRIVATE).edit()
-                .putFloat("last_known_steps", steps)
+            prefs.edit()
+                .putFloat("stepsToday", stepsToday)
                 .apply()
         }
     }
 
+    private fun calculateMidnightDelay(): Long {
+        val now = Calendar.getInstance()
+        val midnight = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            add(Calendar.DAY_OF_YEAR, 1)
+        }
+        return midnight.timeInMillis - now.timeInMillis
+    }
+
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 }
+
+
+
+
 
 @Composable
 fun StepCounterScreen(
@@ -178,7 +208,7 @@ fun StepCounterScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(text = "StepCount", style = MaterialTheme.typography.headlineSmall)
+            Text(text = "Steps", style = MaterialTheme.typography.headlineSmall)
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = steps.toInt().toString(), style = MaterialTheme.typography.displayLarge)
 
@@ -190,6 +220,7 @@ fun StepCounterScreen(
         }
     }
 }
+
 
 @Composable
 fun StepHistoryScreen(stepsDao: StepsDao, navController: NavController) {
