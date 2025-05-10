@@ -1,8 +1,6 @@
 package com.example.stepcoach
 
 import android.content.Context
-import android.hardware.Sensor
-import android.hardware.SensorManager
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import java.time.LocalDate

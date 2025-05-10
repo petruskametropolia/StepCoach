@@ -9,8 +9,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.example.stepcoach.ui.theme.StepCoachTheme
 import android.Manifest
 import android.content.pm.PackageManager
 import android.hardware.Sensor
@@ -18,12 +16,12 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
-import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,15 +31,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.OneTimeWorkRequest
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.Calendar
@@ -204,17 +197,20 @@ fun StepCounterScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp),
+                .padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(text = "Steps", style = MaterialTheme.typography.headlineSmall)
+            Text(text = "Steps", style = MaterialTheme.typography.headlineLarge)
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = steps.toInt().toString(), style = MaterialTheme.typography.displayLarge)
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            Button(onClick = onNavigateToHistory) {
+            Button(onClick = onNavigateToHistory,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFD32F2F),
+                    contentColor = Color.Black ),) {
                 Text(text = "Previous days")
             }
         }
@@ -234,7 +230,10 @@ fun StepHistoryScreen(stepsDao: StepsDao, navController: NavController) {
         ) {
             Button(
                 onClick = { navController.popBackStack() },
-                modifier = Modifier.align(Alignment.Start)
+                modifier = Modifier.align(Alignment.Start),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFD32F2F),
+                    contentColor = Color.Black ),
             ) {
                 Text("Back")
             }
